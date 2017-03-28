@@ -2,6 +2,7 @@
 #include <Custom/Logic/CustomPlayerLog.h>
 #include <Custom/Logic/CustomGMLogic.h>
 #include "Config.h"
+#include "Language.h"
 
 
 
@@ -26,31 +27,6 @@ PreparedQueryResult CustomCharacterSystem::getAccountbyID(int accountid)
 }
 
 
-
-bool CustomCharacterSystem::setProfessionSkill(Player * player, uint32 profession, int professioncost)
-{
-	CustomPlayerLog * PlayerLog = 0;
-
-	bool hasPlayerSkill = player->HasSkill(profession);
-	if (!hasPlayerSkill) {
-		player->LearnDefaultSkill(profession, 1);
-	}
-
-	player->LearnDefaultSkill(profession, 6);
-	player->GetPureMaxSkillValue(profession);
-	player->SetSkill(profession, player->GetSkillStep(profession), 450, 450);
-	PlayerLog->addCompletePlayerLog(player->GetSession()->GetPlayer(), "Profession skilled");
-	ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
-		player->GetName());
-	ChatHandler(player->GetSession()).PSendSysMessage("Your Proffession was set to Skill 450!",
-		player->GetName());
-	ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
-		player->GetName());
-	player->ModifyMoney(-professioncost * GOLD);
-	return true;
-	
-
-}
 
 void CustomCharacterSystem::insertNewFirstCharacterforPlayerCount(int guid, std::string charactername, int accountid, std::string accountname, int guildid, std::string ip)
 {
@@ -358,6 +334,104 @@ void CustomCharacterSystem::playerSetGuildFirstCharacter(Player * player)
 	return;
 }
 
+void CustomCharacterSystem::playerGiveFirstCharacter(Player * player)
+{
+	bool hasPlayerAlreadyFirstChar = true;
+
+	hasPlayerAlreadyFirstChar = hasPlayerAlreadyAFirstChar(player->GetSession()->GetAccountId(), "FirstCharacter");
+
+	if (hasPlayerAlreadyFirstChar) {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("You already get a first Character!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		return;
+	}
+
+	bool twotimescharacter = true;
+	twotimescharacter = countIfPlayerHasLessTotalOf2FirstCharacters(player->GetSession()->GetAccountId());
+	if (twotimescharacter) {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("You already used this Function more than 2 times!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		return;
+	}
+
+	bool playerHasAlreadyCharacter = true;
+	playerHasAlreadyCharacter = hasPlayerAlreadyCharacters(player->GetSession()->GetAccountId());
+	if (playerHasAlreadyCharacter) {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("You already have more than one Character!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		return;
+	}
+
+	int guildcreatedate = 0;
+	guildcreatedate = getGuildCreateDate(player->GetGuildId());
+
+	if (guildcreatedate == 0) {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("Not Member of a Guild! You will get a normal FirstCharacter!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+
+		std::string accountname = "";
+		accountname = getAccountName(player->GetSession()->GetAccountId());
+		std::string lastip = "";
+		lastip = getLastIPbyAccount(player->GetSession()->GetAccountId());
+		insertNewFirstCharacterforPlayerCount(player->GetGUID(), player->GetSession()->GetPlayerName(), player->GetSession()->GetAccountId(), accountname, 0, lastip);
+		executeFirstCharacter(player->GetSession()->GetPlayer(), "FirstCharacter");
+		return;
+	}
+
+	int guildmember = 0;
+	guildmember = getGuildMemberCount(player->GetGuildId());
+
+	if (guildmember < 10) {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("Not enough Guild Members! Come again with more Guild Members!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+
+		return;
+	}
+
+
+	int unixtimestamp = 0;
+	unixtimestamp = getUnixTimestamp();
+
+	if (unixtimestamp - guildcreatedate > 1209600) {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("Your Guild is older than 2 Weeks. Sorry i cannot grant you this Feature!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		return;
+	}
+
+	std::string accountname = "";
+	accountname = getAccountName(player->GetSession()->GetAccountId());
+	std::string lastip = "";
+	lastip = getLastIPbyAccount(player->GetSession()->GetAccountId());
+	insertNewFirstCharacterforPlayerCount(player->GetGUID(), player->GetSession()->GetPlayerName(), player->GetSession()->GetAccountId(), accountname, player->GetGuildId(), lastip);
+	executeGuildCharacter(player->GetSession()->GetPlayer(), "FirstCharacter", guildmember);
+
+	return;
+}
+
 void CustomCharacterSystem::deleteFirstCharacterPlayerLog(int accountid)
 {
 	PreparedStatement * stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_FIRST_CHAR_PLAYERLOG);
@@ -461,7 +535,7 @@ void CustomCharacterSystem::completeAddPlayTimeReward(int playtime, Player* play
 		}
 		return;
 	}
-	player->GetSession()->SendAreaTriggerMessage("Result");
+	
 	return;
 
 }
@@ -529,10 +603,45 @@ void CustomCharacterSystem::requestNewFirstCharacter(Player * player, const char
 
 }
 
+bool CustomCharacterSystem::checkifPlayerisQualifiedforFirstCharacter(Player * player)
+{
+	bool hasPlayerAlreadyFirstChar = true;
+
+	hasPlayerAlreadyFirstChar = hasPlayerAlreadyAFirstChar(player->GetSession()->GetAccountId(), "FirstCharacter");
+
+	if (hasPlayerAlreadyFirstChar) {
+		return false;
+	}
+
+	bool twotimescharacter = true;
+	twotimescharacter = countIfPlayerHasLessTotalOf2FirstCharacters(player->GetSession()->GetAccountId());
+	if (twotimescharacter) {		
+		return false;
+	}
+
+	bool playerHasAlreadyCharacter = true;
+	playerHasAlreadyCharacter = hasPlayerAlreadyCharacters(player->GetSession()->GetAccountId());
+	if (playerHasAlreadyCharacter) {
+		return false;
+	}
+
+
+	int guildmember = 0;
+	guildmember = getGuildMemberCount(player->GetGuildId());
+
+	if (player->GetGuildId() != 0 && guildmember < 10) {
+		return false;
+	}
+
+
+	return true;
+}
+
 void CustomCharacterSystem::sellPlayerVIPCurrency(Player * player, const char * code)
 {
-	int currencyid = sConfigMgr->GetIntDefault("Vip.Vendor.CurrencyID", 38186);
-	int cost = sConfigMgr->GetIntDefault("Vip.Vendor.CurrencyCost", 1000);
+	int vipCoin = sConfigMgr->GetIntDefault("Vip.Vendor.CurrencyID", 38186);
+	int cost = sConfigMgr->GetIntDefault("Vip.Vendor.CurrencyCost", 2);
+	int changeitem = sConfigMgr->GetIntDefault("Vip.Vendor.ChangeItem", 33788);
 
 	std::string eingabe = code;
 	if (eingabe == "") {
@@ -543,27 +652,17 @@ void CustomCharacterSystem::sellPlayerVIPCurrency(Player * player, const char * 
 	CustomPlayerLog * PlayerLog = 0;
 
 	int amount = (uint32)atoi(code);
-	int32 gesgold = cost * GOLD;
-	int32 overallcost = gesgold * amount;
+	int bonescost = amount * cost;
 
-	if (player->GetSession()->GetSecurity() >= 2) {
-		ChatHandler(player->GetSession()).PSendSysMessage("Debug: gesgold: %u", gesgold / 10000,
-			player->GetName());
-		ChatHandler(player->GetSession()).PSendSysMessage("Debug: amount: %u", amount,
-			player->GetName());
-		ChatHandler(player->GetSession()).PSendSysMessage("Debug: overallcost: %u", overallcost / GOLD,
-			player->GetName());
-	}
-
-	if (player->HasEnoughMoney(overallcost)) {
-		player->ModifyMoney(-overallcost);
-		player->AddItem(currencyid, amount);
-		PlayerLog->addCompleteCurrencyLog(player->GetSession()->GetPlayer(), currencyid, amount, gesgold / GOLD, "VIP_CURRENCY_BUY at VIP_VENDOR");
-		PlayerLog->addCompletePlayerLog(player->GetSession()->GetPlayer(), "VIP_CURRENCY_BUY at VIP_VENDOR");
+	if (player->HasItemCount(changeitem, bonescost)){
+		player->DestroyItemCount(changeitem, bonescost, true);
+		player->AddItem(vipCoin, amount);
+		PlayerLog->addCompleteCurrencyLog(player->GetSession()->GetPlayer(), vipCoin, amount, bonescost, "VIP_CURRENCY_CREDIT at VIP_VENDOR");
+		PlayerLog->addCompletePlayerLog(player->GetSession()->GetPlayer(), "VIP_CURRENCY_CREDIT at VIP_VENDOR");
 
 		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
 			player->GetName());
-		ChatHandler(player->GetSession()).PSendSysMessage("You have bought %u Tokens and payed %u Gold.", amount, overallcost / GOLD,
+		ChatHandler(player->GetSession()).PSendSysMessage("You have bought %u Tokens and payed %u Bones.", amount, bonescost,
 			player->GetName());
 		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
 			player->GetName());
@@ -572,13 +671,179 @@ void CustomCharacterSystem::sellPlayerVIPCurrency(Player * player, const char * 
 
 	ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
 		player->GetName());
-	ChatHandler(player->GetSession()).PSendSysMessage("For %u of our VIP Tokens you need %u Gold!", amount, overallcost / GOLD,
+	ChatHandler(player->GetSession()).PSendSysMessage("For %u of our VIP Tokens you need %u Bones!", amount, bonescost,
 		player->GetName());
 	ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
 		player->GetName());
 	return;
 
 }
+
+
+void CustomCharacterSystem::completeLearnProffesion(Player * player, SkillType skill,std::string Logmessage)
+{
+	CustomPlayerLog * PlayerLog = 0;
+	int vipCoin = sConfigMgr->GetIntDefault("Vip.Vendor.CurrencyID", 38186);
+
+	if (player->HasItemCount(vipCoin, 4, false)) {
+		player->DestroyItemCount(vipCoin, 4, true);
+		if (PlayerAlreadyHasTwoProfessions(player) && !IsSecondarySkill(skill)) {
+			ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+				player->GetName());
+			ChatHandler(player->GetSession()).PSendSysMessage("You already know two Proffessions!",
+				player->GetName());
+			ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+				player->GetName());
+			PlayerLog->addCompletePlayerLog(player->GetSession()->GetPlayer(), "Professionproblem caused with 2 Professions!");
+			return;
+		}
+
+		else
+		{
+			if (!LearnAllRecipesInProfession(player, skill)) {
+				ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+					player->GetName());
+				ChatHandler(player->GetSession()).PSendSysMessage("Internal Server Error. Please try again!",
+					player->GetName());
+				ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+					player->GetName());
+				PlayerLog->addCompletePlayerLog(player->GetSession()->GetPlayer(), "Professionsystem Internal Server Error!");
+				return;
+			}
+
+
+
+
+			PlayerLog->addCompletePlayerLog(player->GetSession()->GetPlayer(), Logmessage);
+			return;
+		}
+	}
+	else {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("Not enoug coins!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		PlayerLog->addCompletePlayerLog(player->GetSession()->GetPlayer(), "Not enough coins for proffessions!");
+		return;
+	}
+}
+
+
+
+
+bool CustomCharacterSystem::PlayerAlreadyHasTwoProfessions(const Player *pPlayer)
+{
+	uint32 skillCount = 0;
+
+	if (pPlayer->HasSkill(SKILL_MINING))
+		skillCount++;
+	if (pPlayer->HasSkill(SKILL_SKINNING))
+		skillCount++;
+	if (pPlayer->HasSkill(SKILL_HERBALISM))
+		skillCount++;
+
+	if (skillCount >= 2)
+		return true;
+
+	for (uint32 i = 1; i < sSkillLineStore.GetNumRows(); ++i)
+	{
+		SkillLineEntry const *SkillInfo = sSkillLineStore.LookupEntry(i);
+		if (!SkillInfo)
+			continue;
+
+		if (SkillInfo->categoryId == SKILL_CATEGORY_SECONDARY)
+			continue;
+
+		if ((SkillInfo->categoryId != SKILL_CATEGORY_PROFESSION) || !SkillInfo->canLink)
+			continue;
+
+		const uint32 skillID = SkillInfo->id;
+		if (pPlayer->HasSkill(skillID))
+			skillCount++;
+
+		if (skillCount >= 2)
+			return true;
+	}
+	return false;
+}
+
+bool  CustomCharacterSystem::LearnAllRecipesInProfession(Player *pPlayer, SkillType skill)
+{
+	ChatHandler handler(pPlayer->GetSession());
+	char* skill_name;
+
+	SkillLineEntry const *SkillInfo = sSkillLineStore.LookupEntry(skill);
+	skill_name = SkillInfo->name[handler.GetSessionDbcLocale()];
+
+	if (!SkillInfo)
+	{
+		TC_LOG_ERROR("server.loading", "Profession NPC: received non-valid skill ID (LearnAllRecipesInProfession)");
+	}
+
+	LearnSkillRecipesHelper(pPlayer, SkillInfo->id);
+
+	pPlayer->SetSkill(SkillInfo->id, pPlayer->GetSkillStep(SkillInfo->id), 450, 450);
+	handler.PSendSysMessage(LANG_COMMAND_LEARN_ALL_RECIPES, skill_name);
+
+	return true;
+}
+
+void CustomCharacterSystem::LearnSkillRecipesHelper(Player *player, uint32 skill_id)
+{
+	uint32 classmask = player->getClassMask();
+
+	for (uint32 j = 0; j < sSkillLineAbilityStore.GetNumRows(); ++j)
+	{
+		SkillLineAbilityEntry const *skillLine = sSkillLineAbilityStore.LookupEntry(j);
+		if (!skillLine)
+			continue;
+
+		// wrong skill
+		if (skillLine->skillId != skill_id)
+			continue;
+
+		// not high rank
+		if (skillLine->forward_spellid)
+			continue;
+
+		// skip racial skills
+		if (skillLine->racemask != 0)
+			continue;
+
+		// skip wrong class skills
+		if (skillLine->classmask && (skillLine->classmask & classmask) == 0)
+			continue;
+
+		SpellInfo const * spellInfo = sSpellMgr->GetSpellInfo(skillLine->spellId);
+		if (!spellInfo || !SpellMgr::IsSpellValid(spellInfo, player, false))
+			continue;
+
+		player->LearnSpell(skillLine->spellId, false);
+	}
+}
+
+bool CustomCharacterSystem::IsSecondarySkill(SkillType skill)
+{
+	return skill == SKILL_COOKING || skill == SKILL_FIRST_AID;
+}
+
+
+
+uint32 CustomCharacterSystem::PlayerMaxLevel()
+{
+	return sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
+}
+
+bool PlayerHasItemOrSpell(const Player *plr, uint32 itemId, uint32 spellId) 
+{
+	return plr->HasItemCount(itemId, 1, true) || plr->HasSpell(spellId);
+}
+
+
+
+
 
 void CustomCharacterSystem::givePlayerLevelWithCurrency(Player * player, uint16 cost, uint32 levelup,std::string logmessage)
 {
@@ -655,9 +920,21 @@ void CustomCharacterSystem::executeGuildCharacter(Player * player, std::string p
 	player->UpdateSkillsToMaxSkillsForLevel();
 	player->UpdateSkillsForLevel();
 	if (membercount >= 10 && membercount < 25) {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("You get a 10 Guild Member First Character!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
 		player->LearnDefaultSkill(762, 3);
 	}
 	if (membercount > 25) {
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("You get a 25 Guild Member First Character!",
+			player->GetName());
+		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
+			player->GetName());
 		player->LearnDefaultSkill(762, 4);
 	}
 	
@@ -779,7 +1056,7 @@ void CustomCharacterSystem::moveCharacterToAnotherAccount(Player * player, const
 	uint32 charactersum = felder[0].GetInt32();
 
 	if (player->GetSession()->GetSecurity() > 0) {
-		GMLogic->addCompleteGMCountLogic(player->GetSession()->GetAccountId(), player->GetSession()->GetPlayer(), "Try to transfer Character to a Lower or Higher Sec Account!");
+		GMLogic->addCompleteGMCountLogic(player->GetSession()->GetPlayer(), "Try to transfer Character to a Lower or Higher Sec Account!");
 		ChatHandler(player->GetSession()).PSendSysMessage("##########################################################",
 			player->GetName());
 		ChatHandler(player->GetSession()).PSendSysMessage("Warning: GM should be a supporter not a cheater!",
